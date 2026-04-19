@@ -45,11 +45,18 @@ final class NotificationService {
     }
 
     private func sendNotification(for item: SenteiItem) {
-        guard Self.isBundled else { return }
+        let body = "[\(item.label.category)] \(item.item.title)"
+
+        // bundle 外 (swift run 等) では UN 呼び出しは落ちるので stdout にログだけ出す。
+        // 「本番なら通知が飛んでいた」内容を開発中でも観察できるようにする。
+        guard Self.isBundled else {
+            print("[DEV NOTIFY] \(body)")
+            return
+        }
 
         let content = UNMutableNotificationContent()
         content.title = "sentei"
-        content.body = "[\(item.label.category)] \(item.item.title)"
+        content.body = body
         content.sound = .default
 
         let request = UNNotificationRequest(
