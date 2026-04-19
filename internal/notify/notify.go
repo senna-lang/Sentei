@@ -7,6 +7,7 @@ package notify
 import (
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
 
 	"github.com/senna-lang/sentei/internal/plugin"
@@ -15,6 +16,15 @@ import (
 // Notifier はシステム通知を送信するインターフェース
 type Notifier interface {
 	Notify(item plugin.LabeledItem) error
+}
+
+// NewPlatformNotifier はプラットフォームに応じた Notifier を返す。
+// macOS では osascript を使う DarwinNotifier、それ以外では NoopNotifier。
+func NewPlatformNotifier() Notifier {
+	if runtime.GOOS == "darwin" {
+		return &DarwinNotifier{}
+	}
+	return &NoopNotifier{}
 }
 
 // DarwinNotifier は macOS の osascript を使ってデスクトップ通知を送信する

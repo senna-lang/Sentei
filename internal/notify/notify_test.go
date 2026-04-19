@@ -1,6 +1,7 @@
 package notify
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -69,6 +70,21 @@ func TestNoopNotifier_DoesNotError(t *testing.T) {
 	err := n.Notify(item)
 	if err != nil {
 		t.Errorf("NoopNotifier should not return error, got %v", err)
+	}
+}
+
+func TestNewPlatformNotifier_ReturnsCorrectType(t *testing.T) {
+	n := NewPlatformNotifier()
+
+	switch runtime.GOOS {
+	case "darwin":
+		if _, ok := n.(*DarwinNotifier); !ok {
+			t.Errorf("darwin で DarwinNotifier を期待、got %T", n)
+		}
+	default:
+		if _, ok := n.(*NoopNotifier); !ok {
+			t.Errorf("非 darwin で NoopNotifier を期待、got %T", n)
+		}
 	}
 }
 

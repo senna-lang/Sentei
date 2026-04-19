@@ -1,3 +1,9 @@
-sentei
+/sentei
 .claude/
 internal-docs/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+DerivedData/
+Package.resolved

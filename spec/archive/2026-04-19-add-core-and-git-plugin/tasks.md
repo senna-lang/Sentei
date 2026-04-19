@@ -66,20 +66,20 @@ release PR の分類改善（プロンプトに「title に release → category
 掲示板出力: 統計行「マージ 3件 / あなた担当 3件」+ Bonsai サマリー + category 別一覧。
 4 リポジトリの掲示板を同時生成。
 
-## Step 6: CLI + 動作確認 (3-4 日)
+## Step 6: CLI + 動作確認 ✅ 完了
 
 CLI は REST API クライアント。`sentei serve` 未起動時は自動起動する（Ollama パターン）。
 
-26. serve コマンド実装（HTTP サーバー + プラグイン起動） ← 実装済み、Step 6 では config 読み込み統合
-27. init コマンド実装（`~/.config/sentei/` 作成 + デフォルト config.toml）
-28. list コマンド実装（`GET /api/items` + --urgency, --source, --category フィルタ + 色付き出力）
-29. board コマンド実装（`GET /api/board` + テンプレート出力）
-30. status / stop / plugin list コマンド実装
-31. macOS 通知実装（urgency == urgent で osascript 通知）
-32. CLI 出力フォーマット（色付き、urgency 色分け）
-33. config.toml からの設定読み込み（viper 統合、ハードコード値を config に移行）
-34. LaunchAgent plist 生成（`sentei init` で作成）
-35. README 作成
+26. ✅ serve コマンド実装（HTTP サーバー + プラグイン起動、config.toml 統合）
+27. ✅ init コマンド実装（`~/.config/sentei/` 作成 + デフォルト config.toml + LaunchAgent plist）
+28. ✅ list コマンド実装（`GET /api/items` + --urgency, --source, --category フィルタ + 色付き出力）
+29. ✅ summary コマンド実装（`GET /api/summary` + テンプレート出力。`board` から rename 済み）
+30. ✅ status / stop / plugin list コマンド実装
+31. ✅ macOS 通知実装（urgency == urgent で osascript 通知、serve 起動時に Engine.OnSubmit に結線）
+32. ✅ CLI 出力フォーマット（色付き、urgency 色分け）
+33. ✅ config.toml からの設定読み込み（viper 統合、ハードコード値を config に移行）
+34. ✅ LaunchAgent plist 生成（`sentei init` で作成）
+35. ⏭ README 作成（スキップ）
 
 ---
 
