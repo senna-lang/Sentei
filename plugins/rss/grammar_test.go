@@ -5,21 +5,10 @@ import (
 	"testing"
 )
 
-func TestGrammar_ExcludesUrgent(t *testing.T) {
-	// urgency grammar 行に "urgent" が単独で現れないこと
-	if strings.Contains(Grammar, "\\\"urgent\\\"") {
-		t.Error("RSS grammar が urgent を含んでいる (3 値制約が壊れている)")
-	}
-}
-
-func TestGrammar_ContainsAllThreeUrgencies(t *testing.T) {
-	for _, v := range []string{`"should_check"`, `"can_wait"`, `"ignore"`} {
-		if !strings.Contains(Grammar, `\`+v[:1]+v[1:len(v)-1]+`\"`) {
-			// シンプルに生の文字列で探す
-		}
-		if !strings.Contains(Grammar, strings.ReplaceAll(v, `"`, `\"`)) {
-			t.Errorf("Grammar に %s が含まれていない", v)
-		}
+func TestGrammar_NoUrgencyField(t *testing.T) {
+	// RSS は urgency を廃止したので grammar に含まれないこと
+	if strings.Contains(Grammar, "urgency") {
+		t.Error("RSS grammar に urgency が残っている (廃止済みのはず)")
 	}
 }
 

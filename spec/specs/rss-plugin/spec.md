@@ -4,11 +4,11 @@ sentei の RSS プラグインの振る舞いに関する仕様。
 RSS / Atom フィードの定期ポーリング、エントリの Bonsai ラベリング、Core への Submit を扱う。
 
 **設計のキモ**:
-- urgency は `should_check` / `can_wait` / `ignore` の 3 値 (git と違い `urgent` を含まない — 通知発火の責務は git のみが持つ)
+- **urgency は使わない** (category 分類のみ。記事の優先度判断は Bonsai に困難と判明したため廃止)
 - category は 5 値 (`llm_research` / `llm_news` / `dev_tools` / `swe` / `other`)
 - 再起動時の取りこぼしを防ぐため、閾値 = `max(LastLabeledAtBySource("rss"), now - 24h)` より新しい pubDate のエントリのみ submit
 - 並列 fetch + 直列 Submit で Bonsai の処理を律速させる
-- per-feed の `urgency_floor` は metadata 経由で Core に渡し、Core の汎用 post-process が格上げを適用する
+- per-feed `urgency_floor` は config で受け付けるが、RSS では no-op (将来他プラグイン用に config スキーマだけ保持)
 
 ---
 
@@ -122,9 +122,9 @@ AND 別セッションで `?utm_source=mail` がついた同記事も同じ sour
 WHEN RSS プラグインが Core に登録される場合、
 システムは RSS 専用の GBNF grammar と prompt テンプレートを `Core.RegisterPlugin()` の引数として提供しなければならない (SHALL)。
 
-- **urgency enum は 3 値**: `"should_check" | "can_wait" | "ignore"` (grammar で `urgent` を除外)
+- **grammar は urgency を含まない** — RSS は category 分類のみ (root は `{category, summary}` JSON)
 - **category enum は 5 値**: `"llm_research" | "llm_news" | "dev_tools" | "swe" | "other"`
-- prompt は `/no_think` prefix、分類優先順位 rule、5 件の few-shot example、`{notification_json}` placeholder を持つ
+- prompt は `/no_think` prefix、分類優先順位 rule、few-shot example、`{notification_json}` placeholder を持つ
 
 Prompt の優先順位 rule:
 1. 研究・論文深掘り → `llm_research`
@@ -135,11 +135,11 @@ Prompt の優先順位 rule:
 
 LLM 関連記事は `llm_*` を優先。ただし主題が「tool X を使ってこう書いた」なら `dev_tools`。
 
-#### Scenario: urgent を返さない
+#### Scenario: urgency フィールドを返さない
 GIVEN Bonsai が RSS エントリに対してラベリングを実行する
 WHEN grammar が適用される
-THEN 出力 urgency は `should_check` / `can_wait` / `ignore` のいずれか
-AND `urgent` は grammar で生成不能
+THEN Bonsai 出力 JSON には `urgency` キーが存在しない
+AND ラベリング済みアイテムの urgency は空文字列になる (CLI 表示では `-`)
 
 #### Scenario: 無効な category の拒否
 GIVEN Bonsai が誤って `"anime"` 等の枠外 category を返そうとする
@@ -182,22 +182,16 @@ THEN `"example.com"` (host) が fallback として入る
 
 ---
 
-### Requirement: per-feed urgency_floor の伝達
+### Requirement: per-feed urgency_floor の伝達 (将来用、現状は no-op)
 WHEN config の feed 定義に `urgency_floor` が指定されている場合、
 システムは当該フィードから生成した各 Item の `Metadata["urgency_floor"]` に当該値をコピーしなければならない (SHALL)。
-Core は core spec の「Metadata ベースの urgency floor 適用」要件に従って post-process する。
 
-#### Scenario: urgency_floor の伝達
-GIVEN config に Anthropic News 的なフィードで `urgency_floor = "should_check"` が設定されている
-AND Bonsai が当該フィードのエントリに `urgency = "can_wait"` を返した
-WHEN Core が Submit を完了する
-THEN 保存される Item の urgency は `should_check` に格上げされる
+現状 RSS は Bonsai から urgency を要求しないため、Core 側の post-process (core spec 参照) を呼んでも効果なし (no-op)。将来、RSS 以外のプラグインがこの機構を使う可能性を見越して config スキーマと metadata 伝達だけ残している。
 
-#### Scenario: floor 無指定のフィードは格上げなし
-GIVEN config に urgency_floor 無指定のフィード (Zenn 等)
-AND Bonsai が `urgency = "can_wait"` を返す
-WHEN Core が post-process を実行する
-THEN urgency は `can_wait` のまま変化しない
+#### Scenario: floor 指定の伝達
+GIVEN config に `urgency_floor = "should_check"` が設定されている
+WHEN RSS プラグインが Item を生成する
+THEN Item.Metadata["urgency_floor"] に "should_check" がコピーされる
 
 ---
 

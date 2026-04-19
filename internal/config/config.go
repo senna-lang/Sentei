@@ -162,7 +162,8 @@ repos = [
 ]
 
 # RSS プラグインは opt-in。enabled = true にして使用する
-# urgency_floor は省略可。指定時は ignore/can_wait/should_check/urgent のいずれか
+# RSS は category 分類のみ (urgency は使わない)。urgency_floor は設定可能だが
+# 現状 RSS では no-op (将来別プラグイン用に残している)
 # (Anthropic は公式 RSS 提供なしのため含めていない。代替が見つかったら追記)
 [plugins.rss]
 enabled = false
@@ -172,7 +173,6 @@ poll_interval_sec = 900
 [[plugins.rss.feeds]]
 url = "https://lilianweng.github.io/index.xml"
 name = "Lil'Log (Lilian Weng)"
-urgency_floor = "should_check"
 
 [[plugins.rss.feeds]]
 url = "https://simonwillison.net/atom/everything/"

@@ -80,7 +80,13 @@ func runList(urgency, source, category string) error {
 
 	// アイテム一覧
 	for _, item := range items {
-		urgencyStr := fmt.Sprintf("%-14s", cli.FormatUrgency(item.Label.Urgency))
+		urgencyDisplay := string(item.Label.Urgency)
+		if urgencyDisplay == "" {
+			urgencyDisplay = "-" // urgency 未使用プラグイン (RSS 等)
+		} else {
+			urgencyDisplay = cli.FormatUrgency(item.Label.Urgency)
+		}
+		urgencyStr := fmt.Sprintf("%-14s", urgencyDisplay)
 		categoryStr := fmt.Sprintf("%-10s", item.Label.Category)
 		sourceStr := fmt.Sprintf("%-6s", item.Item.Source)
 
