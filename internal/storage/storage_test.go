@@ -295,3 +295,96 @@ func TestDeleteItem_NonExistentItem(t *testing.T) {
 		t.Error("DeleteItem() should return false for non-existent item")
 	}
 }
+
+func TestParseTime(t *testing.T) {
+	ref := time.Date(2026, 4, 19, 11, 2, 32, 484493000, time.FixedZone("JST", 9*3600))
+
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{"RFC3339Nano", "2026-04-19T02:02:32.484493Z", false},
+		{"RFC3339", "2026-04-19T02:02:32Z", false},
+		{"legacy Go default", "2026-04-19 11:02:32.484493 +0900 JST", false},
+		{"legacy Go with monotonic", "2026-04-19 11:02:32.484493 +0900 JST m=+2.862489168", false},
+		{"legacy negative monotonic", "2026-04-19 11:02:32 +0900 JST m=-1.5", false},
+		{"empty string", "", false},
+		{"garbage", "not a time", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseTime(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("err = %v, wantErr = %v", err, tt.wantErr)
+			}
+			if tt.wantErr || tt.input == "" {
+				return
+			}
+			// 時刻が ref と概ね一致 (Nano/sec のどちらでも許容)
+			if got.Unix() != ref.Unix() {
+				t.Errorf("parseTime(%q).Unix() = %d, want %d", tt.input, got.Unix(), ref.Unix())
+			}
+		})
+	}
+}
+
+func TestLastLabeledAt_Empty(t *testing.T) {
+	s := newTestStorage(t)
+
+	got, err := s.LastLabeledAt()
+	if err != nil {
+		t.Fatalf("LastLabeledAt() error = %v", err)
+	}
+	if !got.IsZero() {
+		t.Errorf("空 DB で LastLabeledAt = %v, want zero", got)
+	}
+}
+
+func TestLastLabeledAt_ReturnsMostRecent(t *testing.T) {
+	s := newTestStorage(t)
+
+	older := time.Date(2026, 4, 17, 10, 0, 0, 0, time.UTC)
+	newer := time.Date(2026, 4, 19, 12, 0, 0, 0, time.UTC)
+
+	for i, ts := range []time.Time{older, newer} {
+		s.SaveLabeledItem(plugin.LabeledItem{
+			Item: plugin.Item{
+				Source: "git", SourceID: fmt.Sprintf("t-%d", i), Title: "x",
+				Timestamp: ts, Metadata: map[string]string{},
+			},
+			Label:     plugin.Label{Urgency: plugin.UrgencyCanWait, Category: "pr"},
+			LabeledAt: ts,
+		})
+	}
+
+	got, err := s.LastLabeledAt()
+	if err != nil {
+		t.Fatalf("LastLabeledAt() error = %v", err)
+	}
+	if got.Unix() != newer.Unix() {
+		t.Errorf("LastLabeledAt = %v, want %v", got, newer)
+	}
+}
+
+func TestLastLabeledAt_ParsesLegacyFormat(t *testing.T) {
+	s := newTestStorage(t)
+
+	// Go の time.Time.String() 表記を直接 INSERT（legacy 行の再現）
+	legacyStr := "2026-04-17 20:22:24.113438 +0900 JST m=+4.746125668"
+	_, err := s.db.Exec(`
+		INSERT INTO items (source, source_id, title, timestamp, urgency, category, labeled_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, "git", "legacy-1", "legacy row", legacyStr, "urgent", "pr", legacyStr)
+	if err != nil {
+		t.Fatalf("legacy INSERT error = %v", err)
+	}
+
+	got, err := s.LastLabeledAt()
+	if err != nil {
+		t.Fatalf("LastLabeledAt() error = %v", err)
+	}
+	if got.IsZero() {
+		t.Error("legacy format から時刻が取れなかった (zero)")
+	}
+}

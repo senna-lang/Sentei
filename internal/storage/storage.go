@@ -8,12 +8,49 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
 
 	"github.com/senna-lang/sentei/internal/plugin"
 )
+
+// parseTime は DB に保存された時刻文字列を寛容に parse する。
+// RFC3339Nano を第一候補とし、legacy 行で書かれていた
+// Go の time.Time.String() 表記 ("2006-01-02 15:04:05.999999999 -0700 MST" +
+// 任意の monotonic clock 接尾辞 " m=+...") もサポートする。
+func parseTime(raw string) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, nil
+	}
+
+	// monotonic clock 接尾辞を落とす
+	if idx := strings.Index(raw, " m=+"); idx >= 0 {
+		raw = raw[:idx]
+	} else if idx := strings.Index(raw, " m=-"); idx >= 0 {
+		raw = raw[:idx]
+	}
+
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05.999999999 -0700 MST",
+		"2006-01-02 15:04:05 -0700 MST",
+	}
+	for _, l := range layouts {
+		if t, err := time.Parse(l, raw); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("未知の時刻フォーマット: %q", raw)
+}
+
+// formatTime は DB に保存する時刻を常に RFC3339Nano UTC で正規化する
+func formatTime(t time.Time) string {
+	return t.UTC().Format(time.RFC3339Nano)
+}
 
 // Storage は SQLite ベースのデータストア
 type Storage struct {
@@ -95,12 +132,12 @@ func (s *Storage) SaveLabeledItem(li plugin.LabeledItem) error {
 		li.Item.Title,
 		li.Item.Content,
 		li.Item.URL,
-		li.Item.Timestamp,
+		formatTime(li.Item.Timestamp),
 		string(metadataJSON),
 		string(li.Label.Urgency),
 		li.Label.Category,
 		li.Label.Summary,
-		li.LabeledAt,
+		formatTime(li.LabeledAt),
 	)
 	return err
 }
@@ -156,7 +193,8 @@ func (s *Storage) ListItems(filter ItemFilter) ([]plugin.LabeledItem, error) {
 		var metadataJSON string
 		var urgency, category, summary string
 		var content, url sql.NullString
-		var labeledAt sql.NullTime
+		var timestampStr string
+		var labeledAtStr sql.NullString
 
 		err := rows.Scan(
 			&li.Item.Source,
@@ -164,12 +202,12 @@ func (s *Storage) ListItems(filter ItemFilter) ([]plugin.LabeledItem, error) {
 			&li.Item.Title,
 			&content,
 			&url,
-			&li.Item.Timestamp,
+			&timestampStr,
 			&metadataJSON,
 			&urgency,
 			&category,
 			&summary,
-			&labeledAt,
+			&labeledAtStr,
 		)
 		if err != nil {
 			return nil, err
@@ -180,8 +218,13 @@ func (s *Storage) ListItems(filter ItemFilter) ([]plugin.LabeledItem, error) {
 		li.Label.Urgency = plugin.Urgency(urgency)
 		li.Label.Category = category
 		li.Label.Summary = summary
-		if labeledAt.Valid {
-			li.LabeledAt = labeledAt.Time
+		if ts, err := parseTime(timestampStr); err == nil {
+			li.Item.Timestamp = ts
+		}
+		if labeledAtStr.Valid {
+			if la, err := parseTime(labeledAtStr.String); err == nil {
+				li.LabeledAt = la
+			}
 		}
 
 		if metadataJSON != "" {
@@ -200,14 +243,19 @@ func (s *Storage) ItemCount() (int, error) {
 	return count, err
 }
 
-// LastLabeledAt は最後にラベリングされた時刻を返す
+// LastLabeledAt は最後にラベリングされた時刻を返す。
+// 行が無い場合や parse できない場合は zero time を返す。
 func (s *Storage) LastLabeledAt() (time.Time, error) {
-	var t sql.NullTime
-	err := s.db.QueryRow("SELECT MAX(labeled_at) FROM items").Scan(&t)
-	if t.Valid {
-		return t.Time, err
+	var raw sql.NullString
+	err := s.db.QueryRow("SELECT MAX(labeled_at) FROM items WHERE labeled_at IS NOT NULL").Scan(&raw)
+	if err != nil || !raw.Valid || raw.String == "" {
+		return time.Time{}, err
 	}
-	return time.Time{}, err
+	t, parseErr := parseTime(raw.String)
+	if parseErr != nil {
+		return time.Time{}, nil
+	}
+	return t, nil
 }
 
 // DeleteItem はアイテムを物理削除する

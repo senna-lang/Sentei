@@ -48,6 +48,8 @@ func runStatus() error {
 
 	if lastLabeled, ok := status["last_labeled"]; ok && lastLabeled != nil {
 		fmt.Printf("最終ラベリング: %v\n", lastLabeled)
+	} else {
+		fmt.Printf("最終ラベリング: %s\n", "なし")
 	}
 	return nil
 }

@@ -195,11 +195,14 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := map[string]any{
-		"daemon":       "running",
-		"bonsai":       bonsaiOK,
-		"plugins":      s.engine.PluginNames(),
-		"item_count":   itemCount,
-		"last_labeled": lastLabeled,
+		"daemon":     "running",
+		"bonsai":     bonsaiOK,
+		"plugins":    s.engine.PluginNames(),
+		"item_count": itemCount,
+	}
+	// zero time (ラベリング履歴なし / DB 値が parse 不能) の場合はフィールド自体を省く
+	if !lastLabeled.IsZero() {
+		status["last_labeled"] = lastLabeled
 	}
 
 	writeJSON(w, http.StatusOK, status)
