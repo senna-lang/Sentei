@@ -2,29 +2,50 @@
 
 対象仕様: `spec/specs/core/spec.md`
 
-本変更では RSS プラグインの正式追加に伴い、以下を更新する:
-- category enum の「RSS 用を予約」という暫定定義を、「RSS プラグイン正式追加による採用」へ格上げする
+RSS プラグインの per-feed `urgency_floor` を受けるため、Core 側に「Item の metadata による urgency 格上げヒント」を解釈する汎用機構を ADDED する。
+
+プラグイン固有の rule を Core に hard-code せず、各プラグインが metadata で宣言する契約方式を採る。これにより将来のプラグイン (arxiv / Slack / newsletter 等) も同じ機構で独自の格上げルールを持たせられる。
 
 ---
 
-## MODIFIED 要件
+## ADDED 要件
 
-### 要件: ラベリング category の source 別 enum
+### 要件: Metadata ベースの urgency floor 適用
+WHEN Bonsai がラベリングを完了した Item に `Metadata["urgency_floor"]` が設定されている場合、
+Core は Bonsai 応答の urgency と floor を比較し、floor より低ければ floor に格上げしなければならない (SHALL)。
+比較には `plugin.UrgencyRank` (ignore=0, can_wait=1, should_check=2, urgent=3) を使う。
 
-従来 `spec/archive/2026-04-19-add-core-and-git-plugin/specs/core/spec-delta.md` で定めていた:
+`urgency_floor` が空文字列、未設定、または `plugin.UrgencyRank` に存在しない値の場合、Core は格上げを行わない (no-op)。
 
-> RSS: `"llm_research"` | `"llm_news"` | `"dev_tools"` | `"other"` (予約)
+post-process は `SaveLabeledItem` の直前で実行する。DB に保存される urgency は格上げ後の値。
 
-を、RSS プラグインの実装に伴い「予約」の但し書きを外す。enum 値・意味は変更しない。
+#### シナリオ: can_wait → should_check の格上げ
+GIVEN Item の Metadata に `urgency_floor = "should_check"` が含まれる
+AND Bonsai が urgency = `can_wait` を返す
+WHEN Core が post-process を実行する
+THEN 最終 label の urgency は `should_check` になる
+AND DB には `should_check` として保存される
 
-#### シナリオ: RSS アイテムの有効な category
-GIVEN RSS プラグインがラベリングを実行する
-WHEN Bonsai がエントリに category を付与する
-THEN `category` は `"llm_research"` / `"llm_news"` / `"dev_tools"` / `"other"` のいずれか
-AND 他の文字列は GBNF grammar により生成不能
+#### シナリオ: 格上げ不要 (既に floor 以上)
+GIVEN Item の Metadata に `urgency_floor = "can_wait"` が含まれる
+AND Bonsai が urgency = `should_check` を返す
+WHEN Core が post-process を実行する
+THEN urgency は `should_check` のまま変化しない
 
-#### シナリオ: source 別 enum の独立性
-GIVEN 同じアイテムタイトルでも source によって category enum は異なる (例: git の `"pr"` と rss の `"llm_research"`)
-WHEN `sentei list --source rss --category llm_research` が実行される
-THEN RSS source かつ `llm_research` category のアイテムのみが返る
-AND git source のアイテムは含まれない
+#### シナリオ: Metadata に urgency_floor が無い
+GIVEN Item の Metadata に `urgency_floor` キーが存在しない (または空文字列)
+WHEN Core が post-process を実行する
+THEN urgency は Bonsai 応答のまま変化しない (no-op)
+
+#### シナリオ: 不正な urgency_floor 値
+GIVEN Item の Metadata に `urgency_floor = "super_urgent"` (enum 外) が含まれる
+AND Bonsai が urgency = `can_wait` を返す
+WHEN Core が post-process を実行する
+THEN urgency は `can_wait` のまま変化しない (不正値は無視して no-op)
+AND 警告は出さない (ラベリング経路を止めない)
+
+#### シナリオ: urgent は常に最上位として扱う
+GIVEN Item の Metadata に `urgency_floor = "should_check"` が含まれる
+AND Bonsai が urgency = `urgent` を返す
+WHEN Core が post-process を実行する
+THEN urgency は `urgent` のまま変化しない (UrgencyRank[urgent]=3 > UrgencyRank[should_check]=2)

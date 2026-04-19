@@ -1,64 +1,120 @@
 # 実装タスク
 
+Grill 結果を反映し、以下の順序で進める。テストは各 Phase で同時に書く (CLAUDE.md TDD)。
+
 ## Phase 0: 依存と config スケルトン
 
-1. `go get github.com/mmcdole/gofeed@latest` で依存追加、`go mod tidy`
-2. `internal/config/config.go` に RSS セクション構造体を追加
-   - `RssConfig { Enabled bool; PollIntervalSec int; Feeds []string }`
+1. `go get github.com/mmcdole/gofeed@latest`、`go get golang.org/x/net/html` (後者は未採用なら追加しない。通常は std ライブラリ)
+2. `go mod tidy` で依存整理
+3. `cmd/sentei/main.go` に `const Version = "0.1.0"` を追加 (User-Agent 用)
+4. `internal/config/config.go` に `RssConfig` / `FeedConfig` 構造体を追加
+   - `FeedConfig { URL string; Name string; UrgencyFloor string }`
+   - `RssConfig { Enabled bool; PollIntervalSec int; Feeds []FeedConfig }`
    - `PluginsConfig` に `Rss RssConfig` フィールド追加
-3. `DefaultTOML()` に `[plugins.rss]` セクションを追記 (enabled = false、poll 900、feeds は初期 5 件)
-4. `config_test.go` で新セクションの読み込みテスト (enabled / disabled / feeds の 3 パターン)
+5. `DefaultTOML()` に 11 フィードの雛形 (コメント付き) を追記、`enabled = false`
+6. `config.Load()` 内に validation を追加: URL が `http(s)://` で始まらなければ fatal、`urgency_floor` が enum 外なら fatal、`poll_interval_sec < 60` は warn ログ
+7. `config_test.go` で: enabled/disabled、URL 不正、urgency_floor 不正、名前 fallback、poll 未指定の各ケース
 
-## Phase 1: フィード取得とパース
+## Phase 1: 基礎部品
 
-5. `plugins/rss/fetch.go` 新設: `fetchFeed(ctx, url) (*gofeed.Feed, error)`。`http.Client{Timeout: 10*time.Second}`、User-Agent は `sentei/<version>`
-6. `fetch_test.go`: httptest.Server でモックフィード (RSS 2.0 / Atom) を返し、正常 parse / タイムアウト / 404 / 不正 XML の 4 ケース
+8. `plugins/rss/sourceid.go` 新設: `normalizeURL(u string) string` + `buildSourceID(entry) string`
+   - 正規化: scheme=https、host lowercase、`www.` 除去、`utm_*` / `fbclid` / `gclid` / `ref` 除去、fragment 除去、trailing slash 除去
+   - source_id: sha256(normalized_url) の先頭 16 文字。GUID が `http(s)://` で始まる場合は GUID を URL 扱い、それ以外は entry.Link を使う。両方空なら `title + published` の hash
+9. `sourceid_test.go`: 正規化 6 ケース + buildSourceID 4 ケース (GUID URL / GUID 非 URL / Link のみ / 完全破綻)
+10. `plugins/rss/strip.go` 新設: `stripHTML(s string, maxLen int) string`
+    - `golang.org/x/net/html.NewTokenizer` で text-only 抽出 (`<script>` / `<style>` 内容は除去)
+    - 連続空白と改行を単一空白に圧縮
+    - maxLen で truncate + 末尾 `...`
+11. `strip_test.go`: プレーン / `<p>` / `<a>` / `<script>` 除去 / 改行圧縮 / truncate の 5-6 ケース
 
-## Phase 2: Plugin インターフェース実装
+## Phase 2: フィード取得
 
-7. `plugins/rss/plugin.go` 新設: `Plugin` / `GrammarProvider` 実装
-   - `type RssPlugin struct { config RssConfig; seen map[string]map[string]struct{}; ... }`
-   - `Name() string` → `"rss"`
-   - `Start(ctx, core)` → 各フィードごとに goroutine で ticker ループ起動
-   - `Stop()` → context cancel で全 goroutine 停止
-8. `plugin_test.go`: `Submit` が差分のみ呼ばれることを確認 (InMemoryCore で検証)
+12. `plugins/rss/fetch.go` 新設: `fetchFeed(ctx, fc FeedConfig) ([]*gofeed.Item, error)`
+    - `http.Client{Timeout: 10*time.Second}`
+    - User-Agent: `sentei/<Version> (+https://github.com/senna-lang/Sentei)`
+    - ステータスコード 429 → `Retry-After` を読んで `rateLimitErr{fc.URL, retryAfter}` を返す (専用 error 型)
+    - 400+ は一般 error、2xx は gofeed parser で `*gofeed.Feed` に変換
+13. `fetch_test.go`: httptest.Server で RSS 2.0 / Atom / 404 / timeout / 429 with Retry-After の 5 ケース
 
-## Phase 3: 差分検出と初回 skip
+## Phase 3: Plugin 骨格
 
-9. `resolveSourceID(entry)` 実装: GUID 優先、無ければ URL の SHA256 短縮を使う。prefix は `<feed-host>:<key>`
-10. 初回ポーリングフラグ: 最初の 1 回だけは全 entry を seen に登録し Submit しない (proposal 決定 #6)
-11. 2 回目以降は seen 差分のみ Submit。seen map はメモリ保持 (デーモン再起動で reset、DB の UNIQUE 制約が冪等性を担保)
-12. `plugin_test.go` で初回 skip と差分 Submit の境界テスト
+14. `plugins/rss/plugin.go` 新設
+    - 型: `RssPlugin { config RssConfig; storage StorageReader; nextAllowedAt map[string]time.Time }`
+    - interface: `type StorageReader interface { LastLabeledAtBySource(source string) (time.Time, error) }`
+    - `NewPlugin(cfg RssConfig, st StorageReader) *RssPlugin`
+    - `Name() string { return "rss" }`
+    - `Start(ctx, core) error`: 起動時刻記録なし (Q6b で不要、閾値は毎 poll で DB 参照)、goroutine 起動
+    - `Stop() error`: context cancel
+15. `plugin_test.go`: ポーリング 1 回の Submit 件数検証、mockCore / mockStorageReader
 
-## Phase 4: Bonsai grammar + prompt
+## Phase 4: pubDate 閾値と Submit
 
-13. `plugins/rss/grammar.go` 新設: GBNF grammar (category enum `llm_research` / `llm_news` / `dev_tools` / `other`)
-14. prompt テンプレート定義: 入力は `title` / `excerpt (200 字)` / `feed_name`。出力は `{urgency, category, summary}` JSON
-15. `grammar_test.go` で grammar 文字列の正当性 (無効な category を Bonsai が返せないこと) を構造的に検証
+16. `plugin.go` に `computeThreshold(core plugin.Core) time.Time` を実装
+    - `last, _ := p.storage.LastLabeledAtBySource("rss")`
+    - `fallback := time.Now().Add(-24 * time.Hour)`
+    - `last.IsZero() || last.Before(fallback)` なら `fallback` を返す、そうでなければ `last`
+17. `plugin.go` に `pollOnce(ctx, core)` 実装 (Q8 (D) の並列 fetch + 直列 Submit)
+    - 各フィードを goroutine で並列 fetch (sync.WaitGroup)
+    - `nextAllowedAt[url]` が将来なら当該フィードを skip (429 対応)
+    - 取得した entry を slice に集約、pubDate で昇順 sort
+    - 閾値より古いものは drop
+    - 直列で `core.Submit(item)` — item.Metadata に `feed_url` / `feed_name` / `author` / `categories` / `urgency_floor` / `guid` を詰める
+18. `plugin_test.go` に閾値テスト追加 (前回 label 無し / ある / 24h 以上前)、429 スキップテスト
 
-## Phase 5: Anthropic News ルール (post-Bonsai 格上げ)
+## Phase 5: Bonsai grammar + prompt
 
-16. `plugins/rss/rule.go` 新設: `applyPostLabelRules(feedURL, label) plugin.Label` を実装
-17. ルール: feed URL が `anthropic.com/news/rss.xml` を含み、Bonsai が `can_wait` / `ignore` を返した場合、`should_check` に格上げ。`urgent` / `should_check` はそのまま
-18. `rule_test.go`: 格上げケース × 4 (各 urgency) + 非 Anthropic feed で格上げされないこと
-19. `plugin.go` の Submit 直前で `applyPostLabelRules` を通す (Core 側の挙動には変更を加えない)
+19. `plugins/rss/grammar.go` 新設: 公開定数 `Grammar` と `PromptTemplate`
+    - grammar の urgency enum は `"should_check" | "can_wait" | "ignore"` の 3 値のみ
+    - category enum は `"llm_research" | "llm_news" | "dev_tools" | "swe" | "other"`
+20. prompt template (Q11 の 5 few-shot つき): `/no_think` prefix、User context、Category/Urgency 列挙、優先順位 rule、5 few-shot、`{notification_json}` placeholder
+21. `grammar_test.go`: grammar 文字列に urgent が含まれないこと、category 5 値が含まれること、prompt が `{notification_json}` を持つことの構造テスト
 
-## Phase 6: 登録とエンドツーエンド
+## Phase 6: Core 側の urgency_floor 汎用化 (Q13 (A-3))
 
-20. `cmd/sentei/serve.go` で `cfg.Plugins.Rss.Enabled` が true なら `rssplugin.NewPlugin(cfg.Plugins.Rss)` を `engine.RegisterPlugin(p, grammar, prompt)` で登録
-21. `sentei plugin list` の RSS 表示確認 (`plugin_list.go` の case 追加: フィード数・ポーリング間隔を表示)
-22. 実機テスト: `[plugins.rss] enabled = true` にして `sentei serve` 起動、15 分 (or 手動で poll_interval_sec=60 に短縮して) 待ち、`sentei list --source rss` で新着が取れることを確認
+22. `internal/plugin/plugin.go` に `UrgencyRank` map を公開定数で追加:
+    ```go
+    var UrgencyRank = map[Urgency]int{
+        UrgencyIgnore: 0, UrgencyCanWait: 1, UrgencyShouldCheck: 2, UrgencyUrgent: 3,
+    }
+    ```
+23. `internal/core/core.go` の `Submit` 内、Bonsai ラベリング成功後・`SaveLabeledItem` 前に:
+    ```go
+    if floor := item.Metadata["urgency_floor"]; floor != "" {
+        if plugin.UrgencyRank[label.Urgency] < plugin.UrgencyRank[plugin.Urgency(floor)] {
+            label.Urgency = plugin.Urgency(floor)
+        }
+    }
+    ```
+24. `core_test.go` を新設 (現在テスト無し)。最低限: Submit + urgency_floor が期待通り格上げ、metadata 無しなら no-op、floor 文字列が不正値なら no-op
 
-## Phase 7: 仕様・最終化
+## Phase 7: Storage 拡張
 
-23. `spec/changes/add-rss-plugin/specs/rss-plugin/spec-delta.md` の内容を `spec/specs/rss-plugin/spec.md` にコピー (新規ファイル)
-24. `spec/specs/core/spec.md` の category enum Requirement を更新 (予約 → 採用)。delta は `specs/core/spec-delta.md` を参照
-25. tasks.md に完了マーク、proposal の「目指す状態」との突合
-26. archive へ移動: `spec/archive/YYYY-MM-DD-add-rss-plugin/` + `IMPLEMENTED` ファイル
+25. `internal/storage/storage.go` に `LastLabeledAtBySource(source string) (time.Time, error)` 追加
+    - 既存 `LastLabeledAt()` と同形、WHERE 句で source = ? を追加
+26. `storage_test.go` に 3 ケース: 空テーブル / rss のみ / git と混在で rss 最新を取得
+
+## Phase 8: 配線と CLI
+
+27. `cmd/sentei/serve.go` に RSS プラグイン登録を追加
+    - `cfg.Plugins.Rss.Enabled` が true なら `rssplugin.NewPlugin(cfg.Plugins.Rss, engine.Storage())` を `engine.RegisterPlugin(p, rssplugin.Grammar, rssplugin.PromptTemplate)` で登録
+28. `cmd/sentei/plugin_list.go:52` に rss case を追加
+    - 表示: `poll_interval_sec`、フィード件数、各フィード行 `"<name> [floor: <urgency_floor>]"` (floor 未指定は省略)
+    - 10 件超過で `...and N more`
+
+## Phase 9: spec 文書化と archive
+
+29. `spec/specs/rss-plugin/spec.md` を新規作成 — `specs/rss-plugin/spec-delta.md` の ADDED 要件をベースに
+30. `spec/specs/core/spec.md` に「Metadata ベースの urgency floor 適用」要件を ADDED
+31. 実機テスト: `enabled = true` + poll 60 秒にして `sentei serve` 起動、1-2 cycle 観察、`sentei list --source rss` で新着確認、`sentei plugin list` の rss 表示確認、`--category swe` / `--urgency should_check` でフィルタ動作確認
+32. archive へ移動: `mv spec/changes/add-rss-plugin spec/archive/YYYY-MM-DD-add-rss-plugin` + `IMPLEMENTED` ファイル (timestamp)
 
 ---
 
-**メモ**:
-- Phase 0-6 は依存関係ほぼ一直線。Phase 4 と Phase 5 だけは並行可能
-- tests は各 Phase で同時に書く (CLAUDE.md TDD 規則)
-- 実装前にこの tasks.md を読み返して、proposal の「影響範囲」との差分が無いか確認
+**並列化可能な箇所**:
+- Phase 1 (基礎部品) / Phase 2 (fetch) は互いに独立
+- Phase 5 (grammar) は Phase 1-4 と独立。どの順でも可
+- Phase 6 (Core 拡張) と Phase 7 (Storage 拡張) は互いに独立
+
+**着手時の最終確認**:
+- 11 フィード URL を `curl -I` で一度確認、特に Zenn topic slug が実在するか
+- Bonsai が起動中、`LastLabeledAtBySource` を呼ぶため DB はマイグレーション済みであること
