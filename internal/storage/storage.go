@@ -258,6 +258,25 @@ func (s *Storage) LastLabeledAt() (time.Time, error) {
 	return t, nil
 }
 
+// LastLabeledAtBySource は指定 source の最新ラベリング時刻を返す。
+// 該当 source のアイテムが未保存の場合は zero time を返す。
+// RSS プラグインの閾値計算 (Q6b) で使う。
+func (s *Storage) LastLabeledAtBySource(source string) (time.Time, error) {
+	var raw sql.NullString
+	err := s.db.QueryRow(
+		"SELECT MAX(labeled_at) FROM items WHERE source = ? AND labeled_at IS NOT NULL",
+		source,
+	).Scan(&raw)
+	if err != nil || !raw.Valid || raw.String == "" {
+		return time.Time{}, err
+	}
+	t, parseErr := parseTime(raw.String)
+	if parseErr != nil {
+		return time.Time{}, nil
+	}
+	return t, nil
+}
+
 // DeleteItem はアイテムを物理削除する
 func (s *Storage) DeleteItem(source, sourceID string) (bool, error) {
 	result, err := s.db.Exec("DELETE FROM items WHERE source = ? AND source_id = ?", source, sourceID)

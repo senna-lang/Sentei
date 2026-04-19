@@ -19,6 +19,15 @@ const (
 	UrgencyIgnore      Urgency = "ignore"
 )
 
+// UrgencyRank は urgency 値の順序関係を表す。比較・post-process (urgency_floor)
+// の基準として使う。Core が metadata["urgency_floor"] を適用する際にも参照。
+var UrgencyRank = map[Urgency]int{
+	UrgencyIgnore:      0,
+	UrgencyCanWait:     1,
+	UrgencyShouldCheck: 2,
+	UrgencyUrgent:      3,
+}
+
 // Item はプラグインからコアに送信される正規化された情報アイテム
 type Item struct {
 	Source    string            // プラグイン識別子 (例: "git")

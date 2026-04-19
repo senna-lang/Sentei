@@ -57,6 +57,27 @@ func runPluginList() error {
 				fmt.Printf("      - %s\n", repo)
 			}
 		}
+
+		if name == "rss" && cfg.Plugins.Rss.Enabled {
+			fmt.Printf("    ポーリング: %d秒間隔\n", cfg.Plugins.Rss.PollIntervalSec)
+			fmt.Printf("    フィード (%d 件):\n", len(cfg.Plugins.Rss.Feeds))
+			maxShow := 10
+			for i, fc := range cfg.Plugins.Rss.Feeds {
+				if i >= maxShow {
+					fmt.Printf("      ...and %d more\n", len(cfg.Plugins.Rss.Feeds)-maxShow)
+					break
+				}
+				displayName := fc.Name
+				if displayName == "" {
+					displayName = fc.URL
+				}
+				if fc.UrgencyFloor != "" {
+					fmt.Printf("      - %s [floor: %s]\n", displayName, fc.UrgencyFloor)
+				} else {
+					fmt.Printf("      - %s\n", displayName)
+				}
+			}
+		}
 	}
 
 	return nil

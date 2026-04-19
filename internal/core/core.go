@@ -136,6 +136,9 @@ func (e *Engine) Submit(item plugin.Item) error {
 		// フォールバックラベルは bonsai.Label() 内で設定済み
 	}
 
+	// Metadata["urgency_floor"] による汎用 post-process (Q13 / core spec-delta)
+	label = applyUrgencyFloor(label, item.Metadata)
+
 	labeledItem := plugin.LabeledItem{
 		Item:      item,
 		Label:     label,
@@ -155,6 +158,25 @@ func (e *Engine) Submit(item plugin.Item) error {
 	)
 
 	return nil
+}
+
+// applyUrgencyFloor は metadata["urgency_floor"] を解釈して label の urgency を
+// 格上げする汎用ポストプロセッサ。未設定・不正値・既に floor 以上の場合は
+// label を変更せずに返す (no-op)。
+func applyUrgencyFloor(label plugin.Label, metadata map[string]string) plugin.Label {
+	floor, ok := metadata["urgency_floor"]
+	if !ok || floor == "" {
+		return label
+	}
+	floorRank, floorOK := plugin.UrgencyRank[plugin.Urgency(floor)]
+	currentRank, currentOK := plugin.UrgencyRank[label.Urgency]
+	if !floorOK || !currentOK {
+		return label
+	}
+	if currentRank < floorRank {
+		label.Urgency = plugin.Urgency(floor)
+	}
+	return label
 }
 
 // Storage はストレージへの参照を返す（API ハンドラ用）

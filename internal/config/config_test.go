@@ -144,4 +144,115 @@ func TestDefaultTOML_IsValid(t *testing.T) {
 	if cfg.Daemon.Addr != "127.0.0.1:7890" {
 		t.Errorf("parsed default has wrong addr: %q", cfg.Daemon.Addr)
 	}
+	// RSS セクションのパース確認
+	if cfg.Plugins.Rss.Enabled {
+		t.Error("RSS は初期で enabled=false であるべき")
+	}
+	if cfg.Plugins.Rss.PollIntervalSec != 900 {
+		t.Errorf("RSS PollIntervalSec = %d, want 900", cfg.Plugins.Rss.PollIntervalSec)
+	}
+	if len(cfg.Plugins.Rss.Feeds) != 10 {
+		t.Errorf("RSS feeds count = %d, want 10", len(cfg.Plugins.Rss.Feeds))
+	}
+}
+
+func TestLoad_RssEnabled_ParsesFeeds(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	content := `
+[plugins.rss]
+enabled = true
+poll_interval_sec = 600
+
+[[plugins.rss.feeds]]
+url = "https://example.com/feed"
+name = "Example"
+urgency_floor = "should_check"
+
+[[plugins.rss.feeds]]
+url = "https://foo.bar/rss"
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if !cfg.Plugins.Rss.Enabled {
+		t.Error("RSS should be enabled")
+	}
+	if cfg.Plugins.Rss.PollIntervalSec != 600 {
+		t.Errorf("PollIntervalSec = %d, want 600", cfg.Plugins.Rss.PollIntervalSec)
+	}
+	if len(cfg.Plugins.Rss.Feeds) != 2 {
+		t.Fatalf("feeds count = %d, want 2", len(cfg.Plugins.Rss.Feeds))
+	}
+	if cfg.Plugins.Rss.Feeds[0].UrgencyFloor != "should_check" {
+		t.Errorf("feed[0].UrgencyFloor = %q, want should_check", cfg.Plugins.Rss.Feeds[0].UrgencyFloor)
+	}
+	if cfg.Plugins.Rss.Feeds[1].UrgencyFloor != "" {
+		t.Errorf("feed[1].UrgencyFloor should be empty, got %q", cfg.Plugins.Rss.Feeds[1].UrgencyFloor)
+	}
+}
+
+func TestLoad_RssInvalidScheme_Fails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	content := `
+[[plugins.rss.feeds]]
+url = "ftp://example.com/feed"
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Load(path)
+	if err == nil {
+		t.Error("ftp:// URL でエラーを期待")
+	}
+}
+
+func TestLoad_RssInvalidUrgencyFloor_Fails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	content := `
+[[plugins.rss.feeds]]
+url = "https://example.com/feed"
+urgency_floor = "super_urgent"
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Load(path)
+	if err == nil {
+		t.Error("enum 外の urgency_floor でエラーを期待")
+	}
+}
+
+func TestLoad_RssEmptyFloor_OK(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	content := `
+[[plugins.rss.feeds]]
+url = "https://example.com/feed"
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("urgency_floor 省略でエラーが出た: %v", err)
+	}
+	if cfg.Plugins.Rss.Feeds[0].UrgencyFloor != "" {
+		t.Errorf("UrgencyFloor should be empty")
+	}
 }

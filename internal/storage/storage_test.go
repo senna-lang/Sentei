@@ -388,3 +388,68 @@ func TestLastLabeledAt_ParsesLegacyFormat(t *testing.T) {
 		t.Error("legacy format から時刻が取れなかった (zero)")
 	}
 }
+
+func TestLastLabeledAtBySource_Empty(t *testing.T) {
+	s := newTestStorage(t)
+
+	got, err := s.LastLabeledAtBySource("rss")
+	if err != nil {
+		t.Fatalf("LastLabeledAtBySource() error = %v", err)
+	}
+	if !got.IsZero() {
+		t.Errorf("空 DB で LastLabeledAtBySource = %v, want zero", got)
+	}
+}
+
+func TestLastLabeledAtBySource_RssOnly(t *testing.T) {
+	s := newTestStorage(t)
+
+	older := time.Date(2026, 4, 17, 10, 0, 0, 0, time.UTC)
+	newer := time.Date(2026, 4, 19, 12, 0, 0, 0, time.UTC)
+
+	for i, ts := range []time.Time{older, newer} {
+		s.SaveLabeledItem(plugin.LabeledItem{
+			Item: plugin.Item{
+				Source: "rss", SourceID: fmt.Sprintf("r-%d", i), Title: "x",
+				Timestamp: ts, Metadata: map[string]string{},
+			},
+			Label:     plugin.Label{Urgency: plugin.UrgencyCanWait, Category: "other"},
+			LabeledAt: ts,
+		})
+	}
+
+	got, err := s.LastLabeledAtBySource("rss")
+	if err != nil {
+		t.Fatalf("LastLabeledAtBySource() error = %v", err)
+	}
+	if got.Unix() != newer.Unix() {
+		t.Errorf("LastLabeledAtBySource = %v, want %v", got, newer)
+	}
+}
+
+func TestLastLabeledAtBySource_MixedSources(t *testing.T) {
+	s := newTestStorage(t)
+
+	// git アイテムの方が新しいが、rss だけの最新を返すべき
+	rssTime := time.Date(2026, 4, 17, 10, 0, 0, 0, time.UTC)
+	gitTime := time.Date(2026, 4, 19, 12, 0, 0, 0, time.UTC)
+
+	s.SaveLabeledItem(plugin.LabeledItem{
+		Item:      plugin.Item{Source: "rss", SourceID: "r-1", Title: "rss", Timestamp: rssTime, Metadata: map[string]string{}},
+		Label:     plugin.Label{Urgency: plugin.UrgencyCanWait, Category: "other"},
+		LabeledAt: rssTime,
+	})
+	s.SaveLabeledItem(plugin.LabeledItem{
+		Item:      plugin.Item{Source: "git", SourceID: "g-1", Title: "git", Timestamp: gitTime, Metadata: map[string]string{}},
+		Label:     plugin.Label{Urgency: plugin.UrgencyCanWait, Category: "pr"},
+		LabeledAt: gitTime,
+	})
+
+	got, err := s.LastLabeledAtBySource("rss")
+	if err != nil {
+		t.Fatalf("LastLabeledAtBySource() error = %v", err)
+	}
+	if got.Unix() != rssTime.Unix() {
+		t.Errorf("rss 最新 = %v, want %v (git の時刻 %v が混入していないか)", got, rssTime, gitTime)
+	}
+}

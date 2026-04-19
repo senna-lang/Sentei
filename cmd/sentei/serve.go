@@ -17,6 +17,7 @@ import (
 	"github.com/senna-lang/sentei/internal/core"
 	"github.com/senna-lang/sentei/internal/server"
 	gitplugin "github.com/senna-lang/sentei/plugins/git"
+	rssplugin "github.com/senna-lang/sentei/plugins/rss"
 	"github.com/spf13/cobra"
 )
 
@@ -69,6 +70,13 @@ func runServe() error {
 			},
 		})
 		engine.RegisterPlugin(gp, gitplugin.GitGrammar, gitplugin.GitPromptTemplate)
+	}
+
+	// RSS プラグイン登録 (opt-in)
+	if cfg.Plugins.Rss.Enabled {
+		userAgent := fmt.Sprintf("sentei/%s (+https://github.com/senna-lang/Sentei)", Version)
+		rp := rssplugin.NewPlugin(cfg.Plugins.Rss, engine.Storage(), userAgent)
+		engine.RegisterPlugin(rp, rssplugin.Grammar, rssplugin.PromptTemplate)
 	}
 
 	// コアエンジン起動

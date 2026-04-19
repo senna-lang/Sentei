@@ -11,6 +11,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Version はバイナリのバージョン番号 (User-Agent 等で使用)
+const Version = "0.1.0"
+
 var (
 	cfgFile string
 	apiAddr string
