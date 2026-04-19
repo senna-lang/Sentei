@@ -18,14 +18,13 @@ import (
 
 // Engine はコアエンジン。Plugin インターフェースの Core を実装する
 type Engine struct {
-	storage  *storage.Storage
-	bonsai   *bonsai.Client
-	plugins  []plugin.Plugin
-	grammar  map[string]string // source → GBNF grammar
-	prompt   map[string]string // source → プロンプトテンプレート
-	onSubmit []func(plugin.LabeledItem) // Submit 成功後のコールバック
-	mu       sync.Mutex
-	cancel   context.CancelFunc
+	storage *storage.Storage
+	bonsai  *bonsai.Client
+	plugins []plugin.Plugin
+	grammar map[string]string // source → GBNF grammar
+	prompt  map[string]string // source → プロンプトテンプレート
+	mu      sync.Mutex
+	cancel  context.CancelFunc
 }
 
 // Config はコアエンジンの設定
@@ -49,11 +48,6 @@ func New(cfg Config) (*Engine, error) {
 		grammar: make(map[string]string),
 		prompt:  make(map[string]string),
 	}, nil
-}
-
-// OnSubmit は Submit 成功後に呼び出されるコールバックを登録する
-func (e *Engine) OnSubmit(fn func(plugin.LabeledItem)) {
-	e.onSubmit = append(e.onSubmit, fn)
 }
 
 // RegisterPlugin はプラグインを登録する
@@ -159,11 +153,6 @@ func (e *Engine) Submit(item plugin.Item) error {
 		"urgency", label.Urgency,
 		"category", label.Category,
 	)
-
-	// Submit 成功後のコールバック呼び出し
-	for _, fn := range e.onSubmit {
-		fn(labeledItem)
-	}
 
 	return nil
 }

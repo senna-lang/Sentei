@@ -15,8 +15,6 @@ import (
 
 	"github.com/senna-lang/sentei/internal/config"
 	"github.com/senna-lang/sentei/internal/core"
-	"github.com/senna-lang/sentei/internal/notify"
-	"github.com/senna-lang/sentei/internal/plugin"
 	"github.com/senna-lang/sentei/internal/server"
 	gitplugin "github.com/senna-lang/sentei/plugins/git"
 	"github.com/spf13/cobra"
@@ -52,17 +50,6 @@ func runServe() error {
 	if err != nil {
 		return fmt.Errorf("コアエンジン初期化失敗: %w", err)
 	}
-
-	// urgent ラベルが付いたアイテムに対して macOS 通知を発火する
-	notifier := notify.NewPlatformNotifier()
-	engine.OnSubmit(func(li plugin.LabeledItem) {
-		if li.Label.Urgency != plugin.UrgencyUrgent {
-			return
-		}
-		if err := notifier.Notify(li); err != nil {
-			slog.Warn("通知送信失敗", "title", li.Item.Title, "error", err)
-		}
-	})
 
 	// Git プラグイン登録
 	if cfg.Plugins.Git.Enabled {

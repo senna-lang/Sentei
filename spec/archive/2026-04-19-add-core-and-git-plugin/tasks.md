@@ -75,7 +75,7 @@ CLI は REST API クライアント。`sentei serve` 未起動時は自動起動
 28. ✅ list コマンド実装（`GET /api/items` + --urgency, --source, --category フィルタ + 色付き出力）
 29. ✅ summary コマンド実装（`GET /api/summary` + テンプレート出力。`board` から rename 済み）
 30. ✅ status / stop / plugin list コマンド実装
-31. ✅ macOS 通知実装（urgency == urgent で osascript 通知、serve 起動時に Engine.OnSubmit に結線）
+31. ✅ macOS 通知実装は add-macos-app change でアプリ側 `UNUserNotificationCenter` に移管済み（Go 側 osascript は廃止）
 32. ✅ CLI 出力フォーマット（色付き、urgency 色分け）
 33. ✅ config.toml からの設定読み込み（viper 統合、ハードコード値を config に移行）
 34. ✅ LaunchAgent plist 生成（`sentei init` で作成）
