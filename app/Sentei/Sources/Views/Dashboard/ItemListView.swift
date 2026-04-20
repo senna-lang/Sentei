@@ -1,18 +1,21 @@
 /**
  * ダッシュボードのアイテム一覧
- * urgency / source / category の Picker フィルタ + ItemRow の縦リスト
- * サイドバーで urgency 選択時はその urgency に固定する
+ * source (git/rss) で固定されたスコープ内で、必要なら urgency または category を更に絞る。
+ * サイドバーからの選択で source + 固定値が決まり、Picker は「そのスコープで意味のあるもの」だけ出す。
  */
 import SwiftUI
 
 /// アイテム一覧ビュー
 struct ItemListView: View {
     @Bindable var viewModel: AppViewModel
-    /// サイドバーで固定された urgency（nil なら Picker で選択可能）
+    /// source 固定値 ("git" または "rss")
+    let source: String
+    /// サイドバーで固定された urgency (git 用。nil なら Picker で選択可能)
     let fixedUrgency: Urgency?
+    /// サイドバーで固定された category (rss 用。nil なら Picker で選択可能)
+    let fixedCategory: String?
 
     @State private var urgencyFilter: Urgency? = nil
-    @State private var sourceFilter: String = "all"
     @State private var categoryFilter: String = "all"
 
     var body: some View {
@@ -24,9 +27,17 @@ struct ItemListView: View {
         .background(SenteiTheme.backgroundPrimary)
         .onAppear {
             urgencyFilter = fixedUrgency
+            categoryFilter = fixedCategory ?? "all"
         }
         .onChange(of: fixedUrgency) { _, newValue in
             urgencyFilter = newValue
+        }
+        .onChange(of: fixedCategory) { _, newValue in
+            categoryFilter = newValue ?? "all"
+        }
+        .onChange(of: source) { _, _ in
+            urgencyFilter = fixedUrgency
+            categoryFilter = fixedCategory ?? "all"
         }
     }
 
@@ -34,7 +45,16 @@ struct ItemListView: View {
 
     private var filterBar: some View {
         HStack(spacing: 12) {
-            if fixedUrgency == nil {
+            // source 固定表示 (Picker ではない、現在のスコープを明示)
+            Text(source)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(SenteiTheme.textSecondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(SenteiTheme.cardBackground)
+                .cornerRadius(4)
+
+            if source == "git", fixedUrgency == nil {
                 filterPicker(
                     label: "urgency",
                     selection: Binding(
@@ -45,17 +65,13 @@ struct ItemListView: View {
                 )
             }
 
-            filterPicker(
-                label: "source",
-                selection: $sourceFilter,
-                options: ["all"] + availableSources
-            )
-
-            filterPicker(
-                label: "category",
-                selection: $categoryFilter,
-                options: ["all"] + availableCategories
-            )
+            if source == "rss", fixedCategory == nil {
+                filterPicker(
+                    label: "category",
+                    selection: $categoryFilter,
+                    options: ["all"] + availableCategories
+                )
+            }
 
             Spacer()
 
@@ -121,18 +137,14 @@ struct ItemListView: View {
 
     private var filteredItems: [SenteiItem] {
         viewModel.items.filter { item in
+            guard item.item.source == source else { return false }
             if let urgencyFilter, item.label.urgency != urgencyFilter { return false }
-            if sourceFilter != "all", item.item.source != sourceFilter { return false }
             if categoryFilter != "all", item.label.category != categoryFilter { return false }
             return true
         }
     }
 
-    private var availableSources: [String] {
-        Array(Set(viewModel.items.map(\.item.source))).sorted()
-    }
-
     private var availableCategories: [String] {
-        Array(Set(viewModel.items.map(\.label.category))).sorted()
+        Array(Set(viewModel.items.filter { $0.item.source == source }.map(\.label.category))).sorted()
     }
 }

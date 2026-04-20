@@ -171,6 +171,10 @@ poll_interval_sec = 900
 
 # 高信号 (固定)
 [[plugins.rss.feeds]]
+url = "https://karpathy.github.io/feed.xml"
+name = "Karpathy Blog"
+
+[[plugins.rss.feeds]]
 url = "https://lilianweng.github.io/index.xml"
 name = "Lil'Log (Lilian Weng)"
 

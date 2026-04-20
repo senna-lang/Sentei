@@ -44,8 +44,11 @@ struct SenteiItemData: Codable, Hashable {
 }
 
 /// Bonsai によるラベリング結果
+///
+/// urgency は optional。RSS プラグインのように urgency 分類をしないプラグイン
+/// (Go 側が空文字列を返す) を受けるため、decode 時に空文字列 / 既知外の値は nil に落とす。
 struct Label: Codable, Hashable {
-    let urgency: Urgency
+    let urgency: Urgency?
     let category: String
     let summary: String?
 
@@ -53,6 +56,20 @@ struct Label: Codable, Hashable {
         case urgency = "Urgency"
         case category = "Category"
         case summary = "Summary"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let raw = try container.decodeIfPresent(String.self, forKey: .urgency) ?? ""
+        self.urgency = Urgency(rawValue: raw)
+        self.category = try container.decode(String.self, forKey: .category)
+        self.summary = try container.decodeIfPresent(String.self, forKey: .summary)
+    }
+
+    init(urgency: Urgency?, category: String, summary: String?) {
+        self.urgency = urgency
+        self.category = category
+        self.summary = summary
     }
 }
 

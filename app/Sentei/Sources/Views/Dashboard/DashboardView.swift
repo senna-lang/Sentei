@@ -9,7 +9,7 @@ import SwiftUI
 /// ダッシュボードウィンドウのルートビュー
 struct DashboardView: View {
     @Bindable var viewModel: AppViewModel
-    @SceneStorage("dashboard.selection") private var selection: DashboardSelection = .allItems
+    @SceneStorage("dashboard.selection") private var selection: DashboardSelection = .gitAll
 
     var body: some View {
         NavigationSplitView {
@@ -35,12 +35,16 @@ struct DashboardView: View {
     @ViewBuilder
     private var detailContent: some View {
         switch selection {
-        case .allItems:
-            ItemListView(viewModel: viewModel, fixedUrgency: nil)
-        case .urgency(let u):
-            ItemListView(viewModel: viewModel, fixedUrgency: u)
-        case .summary(let repo):
+        case .gitAll:
+            ItemListView(viewModel: viewModel, source: "git", fixedUrgency: nil, fixedCategory: nil)
+        case .gitUrgency(let u):
+            ItemListView(viewModel: viewModel, source: "git", fixedUrgency: u, fixedCategory: nil)
+        case .gitSummary(let repo):
             SummaryView(viewModel: viewModel, repo: repo)
+        case .rssAll:
+            ItemListView(viewModel: viewModel, source: "rss", fixedUrgency: nil, fixedCategory: nil)
+        case .rssCategory(let c):
+            ItemListView(viewModel: viewModel, source: "rss", fixedUrgency: nil, fixedCategory: c.rawValue)
         }
     }
 }

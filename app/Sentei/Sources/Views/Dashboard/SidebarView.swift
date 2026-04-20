@@ -1,6 +1,7 @@
 /**
  * ダッシュボードのサイドバー
- * urgency 別カウント / サマリー（リポジトリ別ネスト）/ デーモンステータスを表示する
+ * Git / RSS プラグイン単位で分割し、それぞれに適した絞り込み (urgency / category) を
+ * 配置する。最下段にデーモンステータス。
  */
 import SwiftUI
 
@@ -11,38 +12,8 @@ struct SidebarView: View {
 
     var body: some View {
         List(selection: $selection) {
-            Section("アイテム") {
-                NavigationLink(value: DashboardSelection.allItems) {
-                    itemRow(label: "すべて", count: viewModel.items.count, color: SenteiTheme.textSecondary)
-                }
-                ForEach(Urgency.allCases, id: \.self) { urgency in
-                    NavigationLink(value: DashboardSelection.urgency(urgency)) {
-                        itemRow(
-                            label: urgency.rawValue,
-                            count: viewModel.items.filter { $0.label.urgency == urgency }.count,
-                            color: SenteiTheme.urgencyColor(urgency)
-                        )
-                    }
-                }
-            }
-
-            if !viewModel.repos.isEmpty {
-                Section("サマリー") {
-                    ForEach(viewModel.repos, id: \.self) { repo in
-                        NavigationLink(value: DashboardSelection.summary(repo: repo)) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "doc.text")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(SenteiTheme.textTertiary)
-                                Text(repo)
-                                    .font(.system(size: 12))
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                            }
-                        }
-                    }
-                }
-            }
+            gitSection
+            rssSection
 
             Section("ステータス") {
                 statusBlock
@@ -51,6 +22,76 @@ struct SidebarView: View {
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
         .background(SenteiTheme.backgroundSecondary)
+    }
+
+    // MARK: - Sections
+
+    private var gitSection: some View {
+        Section("Git") {
+            NavigationLink(value: DashboardSelection.gitAll) {
+                itemRow(
+                    label: "すべて",
+                    count: gitItems.count,
+                    color: SenteiTheme.textSecondary
+                )
+            }
+            ForEach(Urgency.allCases, id: \.self) { urgency in
+                NavigationLink(value: DashboardSelection.gitUrgency(urgency)) {
+                    itemRow(
+                        label: urgency.rawValue,
+                        count: gitItems.filter { $0.label.urgency == urgency }.count,
+                        color: SenteiTheme.urgencyColor(urgency)
+                    )
+                }
+            }
+
+            if !viewModel.repos.isEmpty {
+                ForEach(viewModel.repos, id: \.self) { repo in
+                    NavigationLink(value: DashboardSelection.gitSummary(repo: repo)) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "doc.text")
+                                .font(.system(size: 11))
+                                .foregroundStyle(SenteiTheme.textTertiary)
+                            Text(repo)
+                                .font(.system(size: 12))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var rssSection: some View {
+        Section("RSS") {
+            NavigationLink(value: DashboardSelection.rssAll) {
+                itemRow(
+                    label: "すべて",
+                    count: rssItems.count,
+                    color: SenteiTheme.textSecondary
+                )
+            }
+            ForEach(RssCategory.allCases, id: \.self) { category in
+                NavigationLink(value: DashboardSelection.rssCategory(category)) {
+                    itemRow(
+                        label: category.rawValue,
+                        count: rssItems.filter { $0.label.category == category.rawValue }.count,
+                        color: SenteiTheme.textTertiary
+                    )
+                }
+            }
+        }
+    }
+
+    // MARK: - Computed
+
+    private var gitItems: [SenteiItem] {
+        viewModel.items.filter { $0.item.source == "git" }
+    }
+
+    private var rssItems: [SenteiItem] {
+        viewModel.items.filter { $0.item.source == "rss" }
     }
 
     // MARK: - Rows

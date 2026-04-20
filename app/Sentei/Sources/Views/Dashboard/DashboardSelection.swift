@@ -1,30 +1,41 @@
 /**
  * ダッシュボードのサイドバー選択状態
- * アイテム一覧（urgency フィルタ付き）とサマリー（リポジトリ別）を一つの enum で表す
+ * Git / RSS の 2 プラグイン単位でタブのように切り替える。
+ * Git は urgency / リポジトリ別サマリーで絞る。RSS は category で絞る。
  */
 import Foundation
 
+/// RSS plugin の category enum (Go 側 grammar.go と同期)
+enum RssCategory: String, CaseIterable, Hashable {
+    case llmResearch = "llm_research"
+    case llmNews = "llm_news"
+    case devTools = "dev_tools"
+    case swe = "swe"
+    case other = "other"
+}
+
 /// サイドバーでの選択項目
 enum DashboardSelection: Hashable {
-    /// 全アイテム（フィルタなし）
-    case allItems
-    /// urgency でフィルタしたアイテム一覧
-    case urgency(Urgency)
-    /// リポジトリ別のサマリー
-    case summary(repo: String)
+    /// Git アイテム全体 (フィルタなし)
+    case gitAll
+    /// Git アイテムを urgency でフィルタ
+    case gitUrgency(Urgency)
+    /// リポジトリ別サマリー (Git プラグイン由来)
+    case gitSummary(repo: String)
+
+    /// RSS アイテム全体 (フィルタなし)
+    case rssAll
+    /// RSS アイテムを category でフィルタ
+    case rssCategory(RssCategory)
 
     /// サイドバーの表示ラベル
     var label: String {
         switch self {
-        case .allItems: return "すべて"
-        case .urgency(let u):
-            switch u {
-            case .urgent: return "urgent"
-            case .shouldCheck: return "should_check"
-            case .canWait: return "can_wait"
-            case .ignore: return "ignore"
-            }
-        case .summary(let repo): return repo
+        case .gitAll: return "git / すべて"
+        case .gitUrgency(let u): return "git / \(u.rawValue)"
+        case .gitSummary(let repo): return "git / \(repo)"
+        case .rssAll: return "rss / すべて"
+        case .rssCategory(let c): return "rss / \(c.rawValue)"
         }
     }
 }
@@ -32,16 +43,24 @@ enum DashboardSelection: Hashable {
 /// @SceneStorage に保存できるよう RawRepresentable に適合させる
 extension DashboardSelection: RawRepresentable {
     init?(rawValue: String) {
-        if rawValue == "all" {
-            self = .allItems
+        if rawValue == "git:all" {
+            self = .gitAll
             return
         }
-        if let u = rawValue.removingPrefix("urgency:").flatMap(Urgency.init(rawValue:)) {
-            self = .urgency(u)
+        if rawValue == "rss:all" {
+            self = .rssAll
             return
         }
-        if let repo = rawValue.removingPrefix("summary:") {
-            self = .summary(repo: repo)
+        if let u = rawValue.removingPrefix("git:urgency:").flatMap(Urgency.init(rawValue:)) {
+            self = .gitUrgency(u)
+            return
+        }
+        if let repo = rawValue.removingPrefix("git:summary:") {
+            self = .gitSummary(repo: repo)
+            return
+        }
+        if let c = rawValue.removingPrefix("rss:category:").flatMap(RssCategory.init(rawValue:)) {
+            self = .rssCategory(c)
             return
         }
         return nil
@@ -49,9 +68,11 @@ extension DashboardSelection: RawRepresentable {
 
     var rawValue: String {
         switch self {
-        case .allItems: return "all"
-        case .urgency(let u): return "urgency:\(u.rawValue)"
-        case .summary(let repo): return "summary:\(repo)"
+        case .gitAll: return "git:all"
+        case .gitUrgency(let u): return "git:urgency:\(u.rawValue)"
+        case .gitSummary(let repo): return "git:summary:\(repo)"
+        case .rssAll: return "rss:all"
+        case .rssCategory(let c): return "rss:category:\(c.rawValue)"
         }
     }
 }

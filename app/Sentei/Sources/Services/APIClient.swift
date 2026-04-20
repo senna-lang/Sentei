@@ -4,6 +4,30 @@
  */
 import Foundation
 
+/// ISO8601 風文字列の fractional seconds を ISO8601DateFormatter (3 桁固定) に合わせて
+/// 3 桁に切り揃える。3 桁未満なら 0 埋め、3 桁超なら先頭 3 桁のみ残す。
+/// fractional が無い場合は入力をそのまま返す。
+func normalizeFractionalSeconds(_ s: String) -> String {
+    guard let dotIndex = s.firstIndex(of: ".") else { return s }
+    // ISO8601 の timezone suffix 境界を探す (Z または +/- で始まる hh:mm)
+    let afterDot = s.index(after: dotIndex)
+    var endOfFractional = afterDot
+    while endOfFractional < s.endIndex, s[endOfFractional].isNumber {
+        endOfFractional = s.index(after: endOfFractional)
+    }
+    let fractional = String(s[afterDot..<endOfFractional])
+    if fractional.isEmpty { return s }
+
+    var normalized: String
+    if fractional.count >= 3 {
+        normalized = String(fractional.prefix(3))
+    } else {
+        normalized = fractional + String(repeating: "0", count: 3 - fractional.count)
+    }
+
+    return String(s[..<afterDot]) + normalized + String(s[endOfFractional...])
+}
+
 /// API 通信エラー
 enum APIError: Error, LocalizedError {
     case connectionFailed
@@ -37,7 +61,12 @@ actor APIClient {
             let container = try decoder.singleValueContainer()
             let dateString = try container.decode(String.self)
 
-            // Go の time.Time は複数のフォーマットで出力される
+            // Go の time.Time (RFC3339Nano) は fractional seconds が 0〜9 桁の可変精度で
+            // 出る (例: "2026-04-19T23:02:56.70401Z" や "2026-04-19T23:02:56Z")。
+            // ISO8601DateFormatter の withFractionalSeconds は 3 桁固定のため、
+            // 可変精度に対応するには先に fractional を 3 桁に丸めるか除去する。
+            let normalized = normalizeFractionalSeconds(dateString)
+
             let formatters: [ISO8601DateFormatter] = {
                 let f1 = ISO8601DateFormatter()
                 f1.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -47,6 +76,9 @@ actor APIClient {
             }()
 
             for formatter in formatters {
+                if let date = formatter.date(from: normalized) {
+                    return date
+                }
                 if let date = formatter.date(from: dateString) {
                     return date
                 }

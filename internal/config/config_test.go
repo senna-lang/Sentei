@@ -151,8 +151,8 @@ func TestDefaultTOML_IsValid(t *testing.T) {
 	if cfg.Plugins.Rss.PollIntervalSec != 900 {
 		t.Errorf("RSS PollIntervalSec = %d, want 900", cfg.Plugins.Rss.PollIntervalSec)
 	}
-	if len(cfg.Plugins.Rss.Feeds) != 10 {
-		t.Errorf("RSS feeds count = %d, want 10", len(cfg.Plugins.Rss.Feeds))
+	if len(cfg.Plugins.Rss.Feeds) != 11 {
+		t.Errorf("RSS feeds count = %d, want 11", len(cfg.Plugins.Rss.Feeds))
 	}
 }
 
