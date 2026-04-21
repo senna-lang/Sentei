@@ -24,6 +24,7 @@ type Server struct {
 	addr       string
 	srv        *http.Server
 	shutdownCh chan struct{}
+	ghUser     githubUserCache
 }
 
 // New は Server を生成する
@@ -102,6 +103,7 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 	allSurveyed := groupByRepo(filterSurveyed(items))
 	today := groupByRepo(filterTodaySurvey(items))
 	date := time.Now().Format("2006-01-02")
+	myUser := s.ghUser.get()
 
 	var summaries []map[string]string
 	for repo := range allSurveyed {
@@ -113,6 +115,7 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 			Date:    date,
 			Items:   repoItems,
 			Summary: bonsaiSummary,
+			MyUser:  myUser,
 		})
 		summaries = append(summaries, map[string]string{
 			"repo":    repo,
@@ -142,9 +145,10 @@ func (s *Server) handleSummaryRepo(w http.ResponseWriter, r *http.Request) {
 
 	today := groupByRepo(filterTodaySurvey(items))
 	summaryText := summary.Render(summary.SummaryData{
-		Repo:  repo,
-		Date:  time.Now().Format("2006-01-02"),
-		Items: today[repo],
+		Repo:   repo,
+		Date:   time.Now().Format("2006-01-02"),
+		Items:  today[repo],
+		MyUser: s.ghUser.get(),
 	})
 	writeJSON(w, http.StatusOK, map[string]string{
 		"repo":    repo,

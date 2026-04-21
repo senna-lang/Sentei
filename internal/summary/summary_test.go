@@ -130,6 +130,28 @@ func TestRender_StatsLine(t *testing.T) {
 	}
 }
 
+// myUser が空 ("") のとき MyPRs を 0 に保つ (regression 防止)。
+// 以前は Metadata["reviewer"] が未設定だと "" == "" で全 PR が false-positive ヒットしていた。
+func TestCalcStats_EmptyMyUser_NoFalsePositive(t *testing.T) {
+	items := []plugin.LabeledItem{
+		{Item: plugin.Item{Metadata: map[string]string{"survey_type": "merged_pr", "author": "alice"}}},
+		{Item: plugin.Item{Metadata: map[string]string{"survey_type": "merged_pr", "author": "bob"}}},
+		{Item: plugin.Item{Metadata: map[string]string{"survey_type": "open_pr", "author": "carol"}}},
+	}
+
+	stats := CalcStats(items, "")
+
+	if stats.MergedPRs != 2 {
+		t.Errorf("MergedPRs = %d, want 2", stats.MergedPRs)
+	}
+	if stats.NewPRs != 1 {
+		t.Errorf("NewPRs = %d, want 1", stats.NewPRs)
+	}
+	if stats.MyPRs != 0 {
+		t.Errorf("MyPRs = %d, want 0 (myUser=\"\" のとき false-positive にしない)", stats.MyPRs)
+	}
+}
+
 func TestRender_WithSummary(t *testing.T) {
 	items := []plugin.LabeledItem{
 		{

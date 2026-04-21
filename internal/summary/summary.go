@@ -44,7 +44,9 @@ type Stats struct {
 }
 
 // CalcStats はアイテムから統計情報を算出する
-// survey_type をソースオブトゥルースとし、Bonsai のカテゴリラベルが外れてもカウントは正確に保つ
+// survey_type をソースオブトゥルースとし、Bonsai のカテゴリラベルが外れてもカウントは正確に保つ。
+// myUser 未指定 ("") のときは MyPRs を 0 にする: Go のマップはキー欠落時にゼロ値 "" を返すため、
+// 空文字同士の比較で全 PR が false-positive ヒットしてしまうのを防ぐ。
 func CalcStats(items []plugin.LabeledItem, myUser string) Stats {
 	var s Stats
 	for _, li := range items {
@@ -54,12 +56,12 @@ func CalcStats(items []plugin.LabeledItem, myUser string) Stats {
 		switch surveyType {
 		case "merged_pr":
 			s.MergedPRs++
-			if author == myUser || li.Item.Metadata["reviewer"] == myUser {
+			if myUser != "" && (author == myUser || li.Item.Metadata["reviewer"] == myUser) {
 				s.MyPRs++
 			}
 		case "open_pr":
 			s.NewPRs++
-			if author == myUser || li.Item.Metadata["reviewer"] == myUser {
+			if myUser != "" && (author == myUser || li.Item.Metadata["reviewer"] == myUser) {
 				s.MyPRs++
 			}
 		case "new_issue":

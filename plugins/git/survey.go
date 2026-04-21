@@ -17,14 +17,35 @@ import (
 	"github.com/senna-lang/sentei/internal/plugin"
 )
 
+// gitSurveyCmdTimeout は 1 回の gh コマンドに許すタイムアウト。
+// gh 本体にも TCP タイムアウトはあるが、hang したとき hourly ticker が埋まって
+// 以降のサーベイが走らなくなる事故を防ぐため、明示的な context 締切を入れる。
+const gitSurveyCmdTimeout = 30 * time.Second
+
+// runGH はタイムアウト付きで gh コマンドを実行して stdout を返す。
+// context.DeadlineExceeded の場合は識別しやすいエラーに包む。
+func runGH(ctx context.Context, args ...string) ([]byte, error) {
+	cctx, cancel := context.WithTimeout(ctx, gitSurveyCmdTimeout)
+	defer cancel()
+
+	out, err := exec.CommandContext(cctx, "gh", args...).Output()
+	if err != nil {
+		if cctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("gh コマンドタイムアウト (%s): %w", gitSurveyCmdTimeout, err)
+		}
+		return nil, err
+	}
+	return out, nil
+}
+
 // runSurvey は監視リポジトリを定期的にサーベイする
 func (p *Plugin) runSurvey(ctx context.Context) {
 	defer p.wg.Done()
 
-	slog.Info("Git サーベイ���始", "interval", p.config.Survey.Interval, "repos", len(p.config.Survey.Repos))
+	slog.Info("Git サーベイ開始", "interval", p.config.Survey.Interval, "repos", len(p.config.Survey.Repos))
 
 	// 初回は即実行
-	p.surveyAllRepos()
+	p.surveyAllRepos(ctx)
 
 	ticker := time.NewTicker(p.config.Survey.Interval)
 	defer ticker.Stop()
@@ -35,15 +56,21 @@ func (p *Plugin) runSurvey(ctx context.Context) {
 			slog.Info("Git サーベイ停止")
 			return
 		case <-ticker.C:
-			p.surveyAllRepos()
+			p.surveyAllRepos(ctx)
 		}
 	}
 }
 
 // surveyAllRepos は全監視リポジトリをサーベイする
-func (p *Plugin) surveyAllRepos() {
+// ティック毎に 1 行ログを残すので、ticker が止まっていないか運用中に確認できる。
+func (p *Plugin) surveyAllRepos(ctx context.Context) {
+	slog.Info("Git サーベイ実行", "repos", len(p.config.Survey.Repos))
+
 	for _, repo := range p.config.Survey.Repos {
-		items, err := p.surveyRepo(repo.GitHub)
+		if ctx.Err() != nil {
+			return
+		}
+		items, err := p.surveyRepo(ctx, repo.GitHub)
 		if err != nil {
 			slog.Error("リポジトリサーベイ失敗", "repo", repo.GitHub, "error", err)
 			continue
@@ -65,32 +92,32 @@ func (p *Plugin) surveyAllRepos() {
 }
 
 // surveyRepo は 1 つのリポジトリの最新活動を収集する
-func (p *Plugin) surveyRepo(repo string) ([]plugin.Item, error) {
+func (p *Plugin) surveyRepo(ctx context.Context, repo string) ([]plugin.Item, error) {
 	var items []plugin.Item
 
 	// マージ済み PR
-	if prs, err := p.fetchMergedPRs(repo); err != nil {
+	if prs, err := p.fetchMergedPRs(ctx, repo); err != nil {
 		slog.Warn("マージ済み PR 取得失敗", "repo", repo, "error", err)
 	} else {
 		items = append(items, prs...)
 	}
 
 	// オープン中の PR
-	if prs, err := p.fetchOpenPRs(repo); err != nil {
+	if prs, err := p.fetchOpenPRs(ctx, repo); err != nil {
 		slog.Warn("オープン PR 取得失敗", "repo", repo, "error", err)
 	} else {
 		items = append(items, prs...)
 	}
 
 	// 新規 Issue
-	if issues, err := p.fetchRecentIssues(repo); err != nil {
+	if issues, err := p.fetchRecentIssues(ctx, repo); err != nil {
 		slog.Warn("新規 Issue 取得失敗", "repo", repo, "error", err)
 	} else {
 		items = append(items, issues...)
 	}
 
 	// 直近のリリース
-	if releases, err := p.fetchRecentReleases(repo); err != nil {
+	if releases, err := p.fetchRecentReleases(ctx, repo); err != nil {
 		slog.Warn("リリース取得失敗", "repo", repo, "error", err)
 	} else {
 		items = append(items, releases...)
@@ -130,13 +157,12 @@ type ghLabel struct {
 }
 
 // fetchMergedPRs は直近にマージされた PR を取得する
-func (p *Plugin) fetchMergedPRs(repo string) ([]plugin.Item, error) {
+func (p *Plugin) fetchMergedPRs(ctx context.Context, repo string) ([]plugin.Item, error) {
 	since := time.Now().Add(-30 * 24 * time.Hour).Format(time.RFC3339)
 
-	cmd := exec.Command("gh", "api",
+	output, err := runGH(ctx, "api",
 		fmt.Sprintf("repos/%s/pulls?state=closed&sort=updated&direction=desc&per_page=20", repo),
 	)
-	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("gh api 失敗: %w", err)
 	}
@@ -178,13 +204,12 @@ func (p *Plugin) fetchMergedPRs(repo string) ([]plugin.Item, error) {
 }
 
 // fetchRecentIssues は直近に作成された Issue を取得する
-func (p *Plugin) fetchRecentIssues(repo string) ([]plugin.Item, error) {
+func (p *Plugin) fetchRecentIssues(ctx context.Context, repo string) ([]plugin.Item, error) {
 	since := time.Now().Add(-30 * 24 * time.Hour).Format(time.RFC3339)
 
-	cmd := exec.Command("gh", "api",
+	output, err := runGH(ctx, "api",
 		fmt.Sprintf("repos/%s/issues?state=all&since=%s&sort=created&direction=desc&per_page=20", repo, since),
 	)
-	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("gh api 失敗: %w", err)
 	}
@@ -228,13 +253,12 @@ func (p *Plugin) fetchRecentIssues(repo string) ([]plugin.Item, error) {
 
 // fetchOpenPRs はオープン中の PR を取得する
 // 直近 30 日以内に更新されたものに限定する
-func (p *Plugin) fetchOpenPRs(repo string) ([]plugin.Item, error) {
+func (p *Plugin) fetchOpenPRs(ctx context.Context, repo string) ([]plugin.Item, error) {
 	since := time.Now().Add(-30 * 24 * time.Hour)
 
-	cmd := exec.Command("gh", "api",
+	output, err := runGH(ctx, "api",
 		fmt.Sprintf("repos/%s/pulls?state=open&sort=updated&direction=desc&per_page=20", repo),
 	)
-	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("gh api 失敗: %w", err)
 	}
@@ -287,13 +311,12 @@ type ghRelease struct {
 }
 
 // fetchRecentReleases は直近のリリースを取得する
-func (p *Plugin) fetchRecentReleases(repo string) ([]plugin.Item, error) {
+func (p *Plugin) fetchRecentReleases(ctx context.Context, repo string) ([]plugin.Item, error) {
 	since := time.Now().Add(-30 * 24 * time.Hour)
 
-	cmd := exec.Command("gh", "api",
+	output, err := runGH(ctx, "api",
 		fmt.Sprintf("repos/%s/releases?per_page=10", repo),
 	)
-	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("gh api 失敗: %w", err)
 	}
