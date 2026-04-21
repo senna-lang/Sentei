@@ -1,6 +1,7 @@
 /sentei
 .claude/
 internal-docs/
+.codeatrium/
 
 # Swift Package Manager
 .build/
