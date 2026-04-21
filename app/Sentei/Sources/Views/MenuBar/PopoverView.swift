@@ -88,7 +88,7 @@ struct PopoverView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 440)
-            } else if viewModel.recentItems.isEmpty {
+            } else if viewModel.popoverItems.isEmpty {
                 Text("アイテムがありません")
                     .font(.system(size: 12))
                     .foregroundStyle(SenteiTheme.textTertiary)
@@ -97,7 +97,7 @@ struct PopoverView: View {
             } else {
                 ScrollView {
                     VStack(spacing: 4) {
-                        ForEach(viewModel.recentItems) { item in
+                        ForEach(viewModel.popoverItems) { item in
                             ItemRow(item: item) {
                                 Task { await viewModel.deleteItem(item) }
                             }

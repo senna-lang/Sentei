@@ -129,6 +129,29 @@ struct SummaryTests {
     }
 }
 
+@Suite("DashboardSelection PluginScope")
+struct DashboardSelectionScopeTests {
+
+    /// git 系の選択はすべて .git スコープ
+    @Test func gitSelectionsMapToGitScope() {
+        #expect(DashboardSelection.gitAll.pluginScope == .git)
+        #expect(DashboardSelection.gitUrgency(.urgent).pluginScope == .git)
+        #expect(DashboardSelection.gitSummary(repo: "arxiv-compass").pluginScope == .git)
+    }
+
+    /// rss 系の選択はすべて .rss スコープ
+    @Test func rssSelectionsMapToRssScope() {
+        #expect(DashboardSelection.rssAll.pluginScope == .rss)
+        #expect(DashboardSelection.rssCategory(.llmNews).pluginScope == .rss)
+    }
+
+    /// defaultSelection は各プラグインの "all" を返す
+    @Test func defaultSelectionPerScope() {
+        #expect(DashboardSelection.defaultSelection(for: .git) == .gitAll)
+        #expect(DashboardSelection.defaultSelection(for: .rss) == .rssAll)
+    }
+}
+
 @Suite("DaemonStatus JSON Decoding")
 struct StatusTests {
 

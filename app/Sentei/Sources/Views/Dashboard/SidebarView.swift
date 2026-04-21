@@ -1,7 +1,8 @@
 /**
  * ダッシュボードのサイドバー
- * Git / RSS プラグイン単位で分割し、それぞれに適した絞り込み (urgency / category) を
- * 配置する。最下段にデーモンステータス。
+ * プラグイン (Git / RSS) をタブで切り替え、選択中プラグインの絞り込み
+ * (urgency / category 等) だけを表示する。プラグイン追加時はタブを増やすだけで
+ * スクロール量が肥大化しない。最下段にデーモンステータス。
  */
 import SwiftUI
 
@@ -11,17 +12,43 @@ struct SidebarView: View {
     @Binding var selection: DashboardSelection
 
     var body: some View {
-        List(selection: $selection) {
-            gitSection
-            rssSection
-
-            Section("ステータス") {
-                statusBlock
+        VStack(spacing: 0) {
+            Picker("plugin", selection: pluginScopeBinding) {
+                ForEach(PluginScope.allCases, id: \.self) { scope in
+                    Text(scope.label).tag(scope)
+                }
             }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+
+            List(selection: $selection) {
+                switch selection.pluginScope {
+                case .git: gitSection
+                case .rss: rssSection
+                }
+
+                Section("ステータス") {
+                    statusBlock
+                }
+            }
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
         }
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
         .background(SenteiTheme.backgroundSecondary)
+    }
+
+    /// Picker ⇄ selection の橋渡し。タブ切替時はそのプラグインの「すべて」に戻す。
+    private var pluginScopeBinding: Binding<PluginScope> {
+        Binding(
+            get: { selection.pluginScope },
+            set: { newScope in
+                guard newScope != selection.pluginScope else { return }
+                selection = DashboardSelection.defaultSelection(for: newScope)
+            }
+        )
     }
 
     // MARK: - Sections

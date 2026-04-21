@@ -14,6 +14,19 @@ enum RssCategory: String, CaseIterable, Hashable {
     case other = "other"
 }
 
+/// サイドバーのタブ単位 (プラグイン)
+enum PluginScope: String, CaseIterable, Hashable {
+    case git
+    case rss
+
+    var label: String {
+        switch self {
+        case .git: return "Git"
+        case .rss: return "RSS"
+        }
+    }
+}
+
 /// サイドバーでの選択項目
 enum DashboardSelection: Hashable {
     /// Git アイテム全体 (フィルタなし)
@@ -36,6 +49,22 @@ enum DashboardSelection: Hashable {
         case .gitSummary(let repo): return "git / \(repo)"
         case .rssAll: return "rss / すべて"
         case .rssCategory(let c): return "rss / \(c.rawValue)"
+        }
+    }
+
+    /// この選択が属するプラグインタブ
+    var pluginScope: PluginScope {
+        switch self {
+        case .gitAll, .gitUrgency, .gitSummary: return .git
+        case .rssAll, .rssCategory: return .rss
+        }
+    }
+
+    /// 指定プラグインの初期選択 (「すべて」)
+    static func defaultSelection(for scope: PluginScope) -> DashboardSelection {
+        switch scope {
+        case .git: return .gitAll
+        case .rss: return .rssAll
         }
     }
 }

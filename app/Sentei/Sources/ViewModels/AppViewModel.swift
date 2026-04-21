@@ -39,8 +39,11 @@ final class AppViewModel {
         items.filter { $0.label.urgency == .urgent }.count
     }
 
-    var recentItems: [SenteiItem] {
-        Array(items.prefix(10))
+    /// ポップオーバーに出すアイテム (最新 10 件)。
+    /// RSS は情報収集用でダッシュボード側のタブから見る前提なので除外し、
+    /// ポップオーバーは「通知系」(git) のみに絞る。
+    var popoverItems: [SenteiItem] {
+        Array(items.filter { $0.item.source == "git" }.prefix(10))
     }
 
     var repos: [String] {
@@ -86,7 +89,7 @@ final class AppViewModel {
             status = try await fetchedStatus
             connectionState = .connected
 
-            // urgent 通知の処理
+            // GitHub 通知 (mention / review_requested 等) を macOS 通知に転送
             notificationService.processItems(items)
         } catch {
             connectionState = .disconnected
